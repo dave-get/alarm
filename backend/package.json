@@ -27,7 +27,7 @@
     "db:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
-    "render:build": "npm ci --include=dev && npm run build"
+    "render:build": "npm ci --include=dev && npm run build && prisma migrate deploy"
   },
   "dependencies": {
     "@nestjs/authentication": "^0.1.8",

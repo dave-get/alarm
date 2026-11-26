@@ -18,7 +18,8 @@ services:
     plan: starter
     rootDir: backend
     buildCommand: npm run render:build
-    # Applies pending Prisma migrations before each deploy goes live (uses DIRECT_URL).
+    # render:build also runs `prisma migrate deploy` (uses DIRECT_URL), because free
+    # instances skip preDeployCommand. Running it twice is harmless: it is idempotent.
     preDeployCommand: npx prisma migrate deploy
     startCommand: node dist/main.js
     healthCheckPath: /ready
