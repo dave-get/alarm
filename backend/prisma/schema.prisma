@@ -1,0 +1,238 @@
+// Crypto Price Alert — database schema (PostgreSQL, Prisma 7)
+// Plan §7: users, price_alerts, alert_events, devices, notifications, outbox_events
+// plus refresh tokens, per-device delivery records, market checkpoints and gap reports.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AlertCondition {
+  ABOVE
+  BELOW
+}
+
+enum AlertStatus {
+  ACTIVE
+  TRIGGERED
+  PAUSED
+  CANCELLED
+}
+
+enum AlertMode {
+  ONCE
+  RECURRING
+}
+
+enum DevicePlatform {
+  IOS
+  ANDROID
+  WEB
+}
+
+enum NotificationType {
+  PRICE_ALERT
+  TEST
+}
+
+enum DeliveryStatus {
+  PENDING // created, not yet accepted by Expo
+  SENT // Expo returned an ok ticket; receipt not yet checked
+  DELIVERED // receipt ok (handed to FCM/APNs)
+  FAILED // ticket or receipt error, or retries exhausted
+}
+
+model User {
+  id                   String               @id @default(uuid())
+  email                String               @unique
+  passwordHash         String
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  alerts               PriceAlert[]
+  alertEvents          AlertEvent[]
+  devices              Device[]
+  notifications        Notification[]
+  refreshTokens        RefreshToken[]
+  refreshTokenFamilies RefreshTokenFamily[]
+
+  @@map("users")
+}
+
+/// Rotating refresh tokens (store for @nestjs/authentication TokenService).
+model RefreshToken {
+  id              String    @id // SHA-256 of the token, never the token itself
+  familyId        String
+  userId          String
+  createdAt       DateTime
+  expiresAt       DateTime
+  familyExpiresAt DateTime
+  usedAt          DateTime?
+  claims          Json?
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([familyExpiresAt])
+  @@map("refresh_tokens")
+}
+
+model RefreshTokenFamily {
+  id        String   @id
+  userId    String
+  revokedAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_token_families")
+}
+
+model PriceAlert {
+  id                 String         @id @default(uuid())
+  userId             String
+  symbol             String
+  targetPrice        Decimal        @db.Decimal(24, 12)
+  condition          AlertCondition
+  status             AlertStatus    @default(ACTIVE)
+  mode               AlertMode      @default(ONCE)
+  /// RECURRING: armed=false after a trigger until price leaves the condition by the rearm margin and cooldown has elapsed.
+  armed              Boolean        @default(true)
+  cooldownSeconds    Int            @default(300)
+  rearmMarginPercent Decimal        @default(0.5) @db.Decimal(6, 3)
+  /// Monotonic trigger sequence; alert_events.sequence is unique per alert.
+  triggerCount       Int            @default(0)
+  triggeredPrice     Decimal?       @db.Decimal(24, 12)
+  triggeredAt        DateTime?
+  lastTriggeredAt    DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events             AlertEvent[]
+
+  @@index([symbol, status, condition, targetPrice])
+  @@index([userId, status])
+  @@map("price_alerts")
+}
+
+model AlertEvent {
+  id             String         @id @default(uuid())
+  alertId        String
+  userId         String
+  sequence       Int
+  symbol         String
+  condition      AlertCondition
+  targetPrice    Decimal        @db.Decimal(24, 12)
+  triggeredPrice Decimal        @db.Decimal(24, 12)
+  triggeredAt    DateTime
+  tradeId        BigInt
+  createdAt      DateTime       @default(now())
+  alert          PriceAlert     @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notification   Notification?
+
+  @@unique([alertId, sequence])
+  @@index([userId, triggeredAt])
+  @@map("alert_events")
+}
+
+model Device {
+  id             String                 @id @default(uuid())
+  userId         String
+  pushToken      String                 @unique
+  platform       DevicePlatform
+  isActive       Boolean                @default(true)
+  disabledReason String?
+  lastSeenAt     DateTime               @default(now())
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries     NotificationDelivery[]
+
+  @@index([userId, isActive])
+  @@map("devices")
+}
+
+/// User-facing notification (history / read state). One per alert event.
+model Notification {
+  id           String                 @id @default(uuid())
+  userId       String
+  alertEventId String?                @unique
+  type         NotificationType
+  title        String
+  body         String
+  data         Json
+  readAt       DateTime?
+  createdAt    DateTime               @default(now())
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertEvent   AlertEvent?            @relation(fields: [alertEventId], references: [id], onDelete: Cascade)
+  deliveries   NotificationDelivery[]
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+/// One push attempt record per notification and device (plan: unique per alert event and device).
+model NotificationDelivery {
+  id               String         @id @default(uuid())
+  notificationId   String
+  deviceId         String
+  status           DeliveryStatus @default(PENDING)
+  ticketId         String?
+  receiptStatus    String?
+  error            String?
+  attempts         Int            @default(0)
+  sentAt           DateTime?
+  receiptCheckedAt DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  notification     Notification   @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  device           Device         @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, deviceId])
+  @@index([status, sentAt])
+  @@map("notification_deliveries")
+}
+
+/// Transactional outbox: written in the same transaction as the alert trigger.
+model OutboxEvent {
+  id          String    @id @default(uuid())
+  eventType   String
+  aggregateId String
+  payload     Json
+  attempts    Int       @default(0)
+  lastError   String?
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+/// Durable recovery checkpoint: last aggregate trade fully evaluated per symbol.
+model MarketCheckpoint {
+  symbol        String   @id
+  lastTradeId   BigInt
+  lastTradeTime DateTime
+  lastPrice     Decimal  @db.Decimal(24, 12)
+  updatedAt     DateTime @updatedAt
+
+  @@map("market_checkpoints")
+}
+
+/// Explicit record of trades that could not be recovered (plan §3).
+model MarketGap {
+  id          String   @id @default(uuid())
+  symbol      String
+  fromTradeId BigInt
+  toTradeId   BigInt
+  reason      String
+  detectedAt  DateTime @default(now())
+
+  @@index([symbol, detectedAt])
+  @@map("market_gaps")
+}
