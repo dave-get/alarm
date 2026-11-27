@@ -7,7 +7,7 @@ import * as Notifications from 'expo-notifications';
 import { AlertBanner } from '../components/AlertBanner';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { MarketProvider } from '../context/MarketContext';
-import { configureNotificationHandler, ensureAndroidChannel, getPermissionStatus, registerForPushNotifications } from '../lib/notifications';
+import { configureNotificationHandler, ensureAndroidChannel, ensureNotificationPermission, registerForPushNotifications } from '../lib/notifications';
 import { useTheme } from '../lib/theme';
 
 configureNotificationHandler();
@@ -21,10 +21,16 @@ function NotificationBridge() {
     ensureAndroidChannel().catch((e) => console.warn('Could not create the price-alerts notification channel', e));
   }, []);
 
-  // Keep this device's push token registered once the user has granted permission.
+  // Ask for notification permission once (needed for the alarm sound), then keep this
+  // device's push token registered. Push registration needs Firebase on Android.
   useEffect(() => {
     if (status !== 'signedIn' || Platform.OS === 'web') return;
-    void getPermissionStatus().then((p) => (p.granted ? registerForPushNotifications() : undefined));
+    void ensureNotificationPermission()
+      .then((granted) => (granted ? registerForPushNotifications() : undefined))
+      .then((res) => {
+        if (res && !res.ok) console.warn(`Push registration failed (${res.reason}): ${res.message}`);
+      })
+      .catch((e) => console.warn('Notification setup failed', e));
   }, [status]);
 
   useEffect(() => {

@@ -8,7 +8,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { NOTIFICATIONS_QUEUE, NotificationJobs, RedisChannels } from '../redis/redis.constants.js';
 import { RedisPubSubService } from '../redis/redis-pubsub.service.js';
-import { ANDROID_CHANNEL_ID, NotificationsService } from './notifications.service.js';
+import { NotificationsService, pushChannelFor } from './notifications.service.js';
 
 /** Expo error codes worth retrying; everything else is permanent. */
 const TRANSIENT = new Set(['MessageRateExceeded', 'ExpoError', 'ProviderError']);
@@ -126,11 +126,11 @@ export class NotificationDeliveryService {
 
     const message = (token: string): ExpoPushMessage => ({
       to: token,
-      sound: 'default',
+      // Price alarms ring on the alarm channel with the alarm tone; test pushes use the general channel.
+      ...pushChannelFor(notification.type),
       priority: 'high',
       title: notification.title,
       body: notification.body,
-      channelId: ANDROID_CHANNEL_ID,
       data: (notification.data ?? {}) as Record<string, unknown>,
     });
 

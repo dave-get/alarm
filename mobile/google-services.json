@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "161137859271",
+    "project_id": "seventh-site-473614-j3",
+    "storage_bucket": "seventh-site-473614-j3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:161137859271:android:9f5b11bbb8abc484df7ce2",
+        "android_client_info": {
+          "package_name": "com.example.cryptoalerts"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCplBQfA2qOc2kJuq9WJx1Pkw2-uFC1hTU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

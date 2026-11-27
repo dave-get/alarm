@@ -41,3 +41,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Firebase service-account key (FCM V1): secret, upload to EAS, never commit
+*firebase-adminsdk*.json
+fcm-service-account*.json

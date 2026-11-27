@@ -35,6 +35,30 @@ npx expo start
 Push can arrive while the app is closed, but sound, silent mode, Focus/Do Not Disturb, battery
 savers and timing are controlled by the OS. It is not a guaranteed native wake-up alarm.
 
+## Android phone over USB cable
+
+Same flow as the Tovel app: `adb reverse tcp:8081 tcp:8081` lets the phone load the app's
+JavaScript from Metro on this PC through the cable (Fast Refresh, no Wi-Fi needed).
+The scripts find `adb` in the Android SDK (`ANDROID_HOME` or `%LOCALAPPDATA%\Android\Sdk`).
+
+One-time phone setup: Developer options → USB debugging on, USB mode "File transfer",
+accept "Allow USB debugging?".
+
+```powershell
+npm run android:usb       # forward ports + build, install and launch the debug app (first time / native changes)
+npm run start:usb         # forward ports + Metro on localhost (daily JS work, Fast Refresh)
+npm run android:reverse   # re-run after unplugging the cable
+npm run logs:android      # app logs from the phone (console.log, JS errors, crashes)
+```
+
+APK builds (run in `mobile/`):
+
+```powershell
+npm run build:debug-apk   # android/app/build/outputs/apk/debug/app-debug.apk (needs Metro)
+npm run build:apk         # android/app/build/outputs/apk/release/app-release.apk (JS embedded, ~42 MB)
+npm run build:aab         # Play Store bundle
+```
+
 ## Checks
 
 ```bash

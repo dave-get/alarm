@@ -3,6 +3,8 @@ import { AppState } from 'react-native';
 import { io, type Socket } from 'socket.io-client';
 import { api, getTokens, onTokensChanged, refreshTokens } from '../lib/api';
 import { API_URL, SUPPORTED_SYMBOLS } from '../lib/config';
+import { formatPrice } from '../lib/format';
+import { presentAlarmNotification } from '../lib/notifications';
 import type { AlertTriggeredEvent, MarketStatus, PriceTick } from '../lib/types';
 
 interface MarketValue {
@@ -74,6 +76,16 @@ export function MarketProvider({ children }: { children: ReactNode }) {
     socket.on('alert:triggered', (e: AlertTriggeredEvent) => {
       setLastAlert(e);
       setAlertsVersion((v) => v + 1);
+      // Ring now: a local notification on the 'price-alerts' channel plays the alarm sound.
+      presentAlarmNotification({
+        alertEventId: e.alertEventId,
+        alertId: e.alertId,
+        symbol: e.symbol,
+        triggeredPrice: e.triggeredPrice,
+        targetPrice: e.targetPrice,
+        title: `${e.symbol} Price Alert`,
+        body: `${e.symbol} reached ${formatPrice(e.triggeredPrice)} USDT. Target: ${formatPrice(e.targetPrice)}`,
+      }).catch((err) => console.warn('Could not play the alarm notification', err));
     });
     socket.on('auth:expired', async () => {
       await refreshTokens();
